@@ -248,20 +248,18 @@ export class DropboxCloud {
 
     /**
      * @param {File} file
-     * @param {String?} dir Starts with `/`
+     * @param {String} filepath Starts with `/`
      * @returns {Promise<undefined>}
      */
-    async #uploadSmallFile(file, dir = '/') {
-        if (dir.at(-1) != '/') {
-            dir += '/';
-        }
-        return this.#dbx.filesUpload({ path: `${dir}${file.name}`, mode: 'overwrite', mute: true, contents: file });
+    async #uploadSmallFile(file, filepath) {
+        return this.#dbx.filesUpload({ path: filepath, mode: 'overwrite', mute: true, contents: file });
     }
     /**
      * @param {File} file
+     * @param {String} filepath Starts with `/`
      * @returns {Promise<undefined>}
      */
-    async #uploadLargeFile(file) {
+    async #uploadLargeFile(file, filepath) {
         const fileChunks = Array.from({ length: Math.ceil(file.size / DropboxCloud.CHUNK_SIZE) })
             .map( (_, chunkIdx) => file.slice(chunkIdx * DropboxCloud.CHUNK_SIZE, (chunkIdx + 1) * DropboxCloud.CHUNK_SIZE) )
         ;
@@ -274,7 +272,7 @@ export class DropboxCloud {
         }
 
         const cursor = { session_id: uploadSession, offset: file.size };
-        const commit = { path: `/${file.name}`, mode: 'overwrite', mute: true };
+        const commit = { path: filepath, mode: 'overwrite', mute: true };
         return this.#dbx.filesUploadSessionFinish({ cursor: cursor, commit: commit });
     }
 
@@ -371,12 +369,20 @@ export class DropboxCloud {
 
     /**
      * @param {File} file
+     * @param {String} dir Starts and ends with `/`
      * @param {Number?} timeout for OAuth, in seconds
      * @return {Promise<APIResult>}
      */
-    async uploadFile(file, timeout = null) {
+    async uploadFile(file, dir = '/', timeout = null) {
         await this.OAuth(timeout);
-        return (file.size < DropboxCloud.FILE_SIZE_LIMIT ? this.#uploadSmallFile(file) : this.#uploadLargeFile(file))
+        if (dir.at(0) != '/') {
+            dir += '/';
+        }
+        if (dir.at(-1) != '/') {
+            dir += '/';
+        }
+        return (file.size < DropboxCloud.FILE_SIZE_LIMIT ? this.#uploadSmallFile : this.#uploadLargeFile)
+            .call(this, file, `${dir}${file.name}`)
             .then( (response) => response.result )
             .catch(catchCallback(`Error uploading file ${file}.`))
         ;
